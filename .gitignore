@@ -1,0 +1,20 @@
+# Xcode build output
+Builds/MacOSX/build/
+
+# Xcode user-specific project data
+Builds/MacOSX/plain_eq.xcodeproj/xcuserdata/
+Builds/MacOSX/plain_eq.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Xcode derived data (system-wide; optional)
+DerivedData/
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# IDE/editor
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
