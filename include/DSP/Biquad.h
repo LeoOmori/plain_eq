@@ -8,6 +8,7 @@ class Biquad
 {
 public:
     void setPeakFilter (double sampleRate, double frequencyHz, double gainDb, double q);
+    void setLowPassFilter (double sampleRate, double frequencyHz, double q);
     float process (float input);
     void reset();
 

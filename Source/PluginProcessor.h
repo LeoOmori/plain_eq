@@ -66,13 +66,21 @@ public:
     static constexpr const char* frequencyParamId = PlainEq::Parameters::frequencyParamId;
     static constexpr const char* gainParamId = PlainEq::Parameters::gainParamId;
     static constexpr const char* qParamId = PlainEq::Parameters::qParamId;
+    static constexpr const char* filterTypeParamId = PlainEq::Parameters::filterTypeParamId;
     static constexpr const char* outputGainParamId = PlainEq::Parameters::outputGainParamId;
     static constexpr const char* bypassParamId = PlainEq::Parameters::bypassParamId;
     static constexpr int maxBands = 10;
 
+    enum FilterType
+    {
+        peakFilter = 0,
+        lowPassFilter = 1
+    };
+
     static juce::String getFrequencyParamId (int bandIndex);
     static juce::String getGainParamId (int bandIndex);
     static juce::String getQParamId (int bandIndex);
+    static juce::String getFilterTypeParamId (int bandIndex);
 
     juce::AudioProcessorValueTreeState parameters;
 
@@ -82,6 +90,7 @@ public:
     float getBandFrequencyHz (int bandIndex) const noexcept;
     float getBandGainDb (int bandIndex) const noexcept;
     float getBandQ (int bandIndex) const noexcept;
+    int getBandFilterType (int bandIndex) const noexcept;
     int getActiveBandCount() const noexcept;
     void setActiveBandCount (int count);
     float getOutputGainDb() const noexcept;
@@ -110,6 +119,7 @@ private:
     std::array<float, maxBands> lastFrequencyHz {};
     std::array<float, maxBands> lastGainDb {};
     std::array<float, maxBands> lastQ {};
+    std::array<int, maxBands> lastFilterType {};
     int lastActiveBandCount = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Plain_eqAudioProcessor)

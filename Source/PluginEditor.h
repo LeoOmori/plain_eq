@@ -104,6 +104,7 @@ private:
     juce::Slider qSlider;
     juce::Slider outputSlider;
     juce::ToggleButton bypassButton;
+    juce::TextButton filterTypeButton;
     juce::TextButton aboutButton;
 
     juce::Label frequencyLabel;
@@ -119,6 +120,8 @@ private:
     int selectedBandIndex = 0;
 
     void setSelectedBandIndex (int bandIndex);
+    void toggleSelectedFilterType();
+    void updateSelectedFilterControls();
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;

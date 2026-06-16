@@ -9,4 +9,9 @@ double getPeakFilterMagnitudeDb (double sampleRate,
                                  double gainDb,
                                  double q,
                                  double analysisFrequencyHz);
+
+double getLowPassFilterMagnitudeDb (double sampleRate,
+                                    double frequencyHz,
+                                    double q,
+                                    double analysisFrequencyHz);
 } // namespace PlainEq::DSP
