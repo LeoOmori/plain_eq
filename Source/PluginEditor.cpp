@@ -196,6 +196,75 @@ void ResponseCurveComponent::setSelectedBandIndex (int bandIndex)
     repaint();
 }
 
+void ResponseCurveComponent::showNodeActionsMenu (int bandIndex, const juce::MouseEvent& event)
+{
+    enum MenuItemId
+    {
+        resetToDefaultItem = 1,
+        deleteItem
+    };
+
+    juce::PopupMenu menu;
+    menu.addItem (resetToDefaultItem, "Reset to default");
+    menu.addSeparator();
+    menu.addItem (deleteItem, "Delete", audioProcessor.getActiveBandCount() > 1);
+
+    const auto targetArea = juce::Rectangle<int> (event.getScreenPosition().x,
+                                                 event.getScreenPosition().y,
+                                                 1,
+                                                 1);
+
+    menu.showMenuAsync (juce::PopupMenu::Options()
+                            .withTargetComponent (this)
+                            .withTargetScreenArea (targetArea),
+                        [safeThis = juce::Component::SafePointer<ResponseCurveComponent> (this), bandIndex] (int result)
+                        {
+                            if (safeThis == nullptr)
+                                return;
+
+                            if (result == resetToDefaultItem)
+                                safeThis->resetBandToDefault (bandIndex);
+                            else if (result == deleteItem)
+                                safeThis->deleteBand (bandIndex);
+                        });
+}
+
+void ResponseCurveComponent::resetBandToDefault (int bandIndex)
+{
+    const auto clampedBandIndex = juce::jlimit (0, audioProcessor.getActiveBandCount() - 1, bandIndex);
+
+    setParameterFromValue (Plain_eqAudioProcessor::getFrequencyParamId (clampedBandIndex), 1000.0f);
+    setParameterFromValue (Plain_eqAudioProcessor::getGainParamId (clampedBandIndex), 0.0f);
+    setParameterFromValue (Plain_eqAudioProcessor::getQParamId (clampedBandIndex), 1.0f);
+    selectBand (clampedBandIndex);
+    repaint();
+}
+
+void ResponseCurveComponent::deleteBand (int bandIndex)
+{
+    const auto bandCount = audioProcessor.getActiveBandCount();
+
+    if (bandCount <= 1)
+        return;
+
+    const auto clampedBandIndex = juce::jlimit (0, bandCount - 1, bandIndex);
+
+    for (int band = clampedBandIndex; band < bandCount - 1; ++band)
+    {
+        setParameterFromValue (Plain_eqAudioProcessor::getFrequencyParamId (band), audioProcessor.getBandFrequencyHz (band + 1));
+        setParameterFromValue (Plain_eqAudioProcessor::getGainParamId (band), audioProcessor.getBandGainDb (band + 1));
+        setParameterFromValue (Plain_eqAudioProcessor::getQParamId (band), audioProcessor.getBandQ (band + 1));
+    }
+
+    setParameterFromValue (Plain_eqAudioProcessor::getFrequencyParamId (bandCount - 1), 1000.0f);
+    setParameterFromValue (Plain_eqAudioProcessor::getGainParamId (bandCount - 1), 0.0f);
+    setParameterFromValue (Plain_eqAudioProcessor::getQParamId (bandCount - 1), 1.0f);
+
+    audioProcessor.setActiveBandCount (bandCount - 1);
+    selectBand (juce::jmin (clampedBandIndex, bandCount - 2));
+    repaint();
+}
+
 void ResponseCurveComponent::updateBandParametersFromPosition (int bandIndex, juce::Point<float> position)
 {
     auto graphBounds = getGraphBounds();
@@ -357,6 +426,15 @@ void ResponseCurveComponent::mouseDown (const juce::MouseEvent& event)
     if (nodeIndex >= 0)
     {
         selectBand (nodeIndex);
+
+        if (event.mods.isPopupMenu())
+        {
+            isDraggingNode = false;
+            showNodeActionsMenu (nodeIndex, event);
+            repaint();
+            return;
+        }
+
         isDraggingNode = true;
         nodeDragOffset = getNodePosition (selectedBandIndex) - event.position;
 

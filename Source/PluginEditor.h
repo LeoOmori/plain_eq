@@ -49,6 +49,9 @@ private:
     int getNodeAtPosition (juce::Point<float>) const;
     bool isPositionInGraph (juce::Point<float>) const;
     void selectBand (int bandIndex);
+    void showNodeActionsMenu (int bandIndex, const juce::MouseEvent&);
+    void deleteBand (int bandIndex);
+    void resetBandToDefault (int bandIndex);
     void updateBandParametersFromPosition (int bandIndex, juce::Point<float>);
     void setParameterFromValue (const juce::String& parameterId, float value);
     void processPendingAnalyzerSamples();
