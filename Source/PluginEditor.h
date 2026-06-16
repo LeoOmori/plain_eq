@@ -104,6 +104,7 @@ private:
     juce::Slider qSlider;
     juce::Slider outputSlider;
     juce::ToggleButton bypassButton;
+    juce::TextButton aboutButton;
 
     juce::Label frequencyLabel;
     juce::Label gainLabel;
@@ -114,6 +115,7 @@ private:
     juce::Rectangle<int> bandBadgeBounds;
     juce::Rectangle<int> filterTypeBounds;
     juce::Rectangle<int> footerBounds;
+    juce::Rectangle<int> aboutButtonBounds;
     int selectedBandIndex = 0;
 
     void setSelectedBandIndex (int bandIndex);

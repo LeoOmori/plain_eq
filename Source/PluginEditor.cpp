@@ -34,6 +34,59 @@ void configureSlider (juce::Slider& slider, juce::Label& label, const juce::Stri
     label.setFont (juce::FontOptions (14.0f));
 }
 
+class AboutDialog final : public juce::Component
+{
+public:
+    AboutDialog()
+    {
+        okButton.setButtonText ("OK");
+        okButton.onClick = [this]
+        {
+            if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+                dialog->exitModalState (0);
+        };
+
+        addAndMakeVisible (okButton);
+        setSize (400, 220);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (paperColour);
+        g.setColour (inkColour);
+        g.setFont (juce::FontOptions (22.0f));
+        g.drawText ("About Plain EQ", getLocalBounds().removeFromTop (54), juce::Justification::centred);
+
+        g.setFont (juce::FontOptions (16.0f));
+        g.drawFittedText ("Made with love by Leon\n\nCredits to RBJ Audio-EQ-Cookbook",
+                          getLocalBounds().reduced (28).withTrimmedTop (54).withTrimmedBottom (64),
+                          juce::Justification::centred,
+                          4);
+    }
+
+    void resized() override
+    {
+        okButton.setBounds (getLocalBounds().withSizeKeepingCentre (96, 32).withY (getHeight() - 52));
+    }
+
+private:
+    juce::TextButton okButton;
+};
+
+void showAboutDialog (juce::Component& target)
+{
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned (new AboutDialog());
+    options.dialogTitle = {};
+    options.dialogBackgroundColour = paperColour;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = false;
+    options.resizable = false;
+
+    if (auto* dialog = options.launchAsync())
+        dialog->centreAroundComponent (&target, 400, 220);
+}
+
 } // namespace
 
 //==============================================================================
@@ -559,6 +612,15 @@ Plain_eqAudioProcessorEditor::Plain_eqAudioProcessorEditor (Plain_eqAudioProcess
     bypassButton.setColour (juce::ToggleButton::tickColourId, inkColour);
     bypassButton.setColour (juce::ToggleButton::tickDisabledColourId, lightInkColour);
 
+    aboutButton.setButtonText ("ABOUT");
+    aboutButton.onClick = [this]
+    {
+        showAboutDialog (*this);
+    };
+    aboutButton.setColour (juce::TextButton::buttonColourId, paperColour);
+    aboutButton.setColour (juce::TextButton::textColourOnId, inkColour);
+    aboutButton.setColour (juce::TextButton::textColourOffId, inkColour);
+
     for (auto* slider : { &frequencySlider, &gainSlider, &qSlider, &outputSlider })
         addAndMakeVisible (slider);
 
@@ -566,6 +628,7 @@ Plain_eqAudioProcessorEditor::Plain_eqAudioProcessorEditor (Plain_eqAudioProcess
         addAndMakeVisible (label);
 
     addAndMakeVisible (bypassButton);
+    addAndMakeVisible (aboutButton);
 
     setSelectedBandIndex (0);
     outputAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::outputGainParamId, outputSlider);
@@ -694,6 +757,9 @@ void Plain_eqAudioProcessorEditor::resized()
     auto outputArea = headerControls.removeFromRight (168).reduced (2, 0);
     outputLabel.setBounds (outputArea.removeFromTop (18));
     outputSlider.setBounds (outputArea.reduced (0, 1));
+
+    aboutButtonBounds = headerControls.removeFromRight (96).reduced (0, 4);
+    aboutButton.setBounds (aboutButtonBounds);
 
     auto footer = footerBounds.reduced (0, 9);
     bypassButton.setBounds (footer.removeFromRight (96).reduced (0, 4));
