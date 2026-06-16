@@ -92,4 +92,34 @@ double getLowPassFilterMagnitudeDb (double sampleRate,
 
     return getBiquadMagnitudeDb (b0, b1, b2, a1, a2, sampleRate, analysisFrequencyHz);
 }
+
+double getHighPassFilterMagnitudeDb (double sampleRate,
+                                     double frequencyHz,
+                                     double q,
+                                     double analysisFrequencyHz)
+{
+    constexpr double pi = 3.14159265358979323846;
+
+    frequencyHz = std::clamp (frequencyHz, 20.0, sampleRate * 0.45);
+    q = std::clamp (q, 0.1, 20.0);
+
+    const auto w0 = 2.0 * pi * frequencyHz / sampleRate;
+    const auto alpha = std::sin (w0) / (2.0 * q);
+    const auto cosW0 = std::cos (w0);
+
+    const auto rawB0 = (1.0 + cosW0) * 0.5;
+    const auto rawB1 = -(1.0 + cosW0);
+    const auto rawB2 = (1.0 + cosW0) * 0.5;
+    const auto rawA0 = 1.0 + alpha;
+    const auto rawA1 = -2.0 * cosW0;
+    const auto rawA2 = 1.0 - alpha;
+
+    const auto b0 = rawB0 / rawA0;
+    const auto b1 = rawB1 / rawA0;
+    const auto b2 = rawB2 / rawA0;
+    const auto a1 = rawA1 / rawA0;
+    const auto a2 = rawA2 / rawA0;
+
+    return getBiquadMagnitudeDb (b0, b1, b2, a1, a2, sampleRate, analysisFrequencyHz);
+}
 } // namespace PlainEq::DSP

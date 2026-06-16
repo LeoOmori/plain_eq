@@ -338,7 +338,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout Plain_eqAudioProcessor::crea
         layout.push_back (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { getFilterTypeParamId (band), 1 },
             "Band " + bandNumber + " Filter Type",
-            juce::StringArray { "Peak", "LPF" },
+            juce::StringArray { "Peak", "LPF", "HPF" },
             peakFilter));
     }
 
@@ -461,6 +461,8 @@ void Plain_eqAudioProcessor::updateFiltersIfNeeded()
 
             if (filterType == lowPassFilter)
                 filter.setLowPassFilter (sampleRate, frequencyHz, q);
+            else if (filterType == highPassFilter)
+                filter.setHighPassFilter (sampleRate, frequencyHz, q);
             else
                 filter.setPeakFilter (sampleRate, frequencyHz, gainDb, q);
         }

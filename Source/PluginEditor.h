@@ -120,7 +120,8 @@ private:
     int selectedBandIndex = 0;
 
     void setSelectedBandIndex (int bandIndex);
-    void toggleSelectedFilterType();
+    void showSelectedFilterTypeMenu();
+    void setSelectedFilterType (int filterType);
     void updateSelectedFilterControls();
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;

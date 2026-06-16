@@ -14,4 +14,9 @@ double getLowPassFilterMagnitudeDb (double sampleRate,
                                     double frequencyHz,
                                     double q,
                                     double analysisFrequencyHz);
+
+double getHighPassFilterMagnitudeDb (double sampleRate,
+                                     double frequencyHz,
+                                     double q,
+                                     double analysisFrequencyHz);
 } // namespace PlainEq::DSP

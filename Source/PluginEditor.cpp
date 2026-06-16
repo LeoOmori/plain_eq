@@ -10,6 +10,7 @@ namespace
 {
 using PlainEq::DSP::getPeakFilterMagnitudeDb;
 using PlainEq::DSP::getLowPassFilterMagnitudeDb;
+using PlainEq::DSP::getHighPassFilterMagnitudeDb;
 using PlainEq::UiFormatters::formatDecibels;
 using PlainEq::UiFormatters::formatFrequency;
 using PlainEq::UiFormatters::formatQ;
@@ -33,6 +34,45 @@ void configureSlider (juce::Slider& slider, juce::Label& label, const juce::Stri
     label.setJustificationType (juce::Justification::centred);
     label.setColour (juce::Label::textColourId, inkColour);
     label.setFont (juce::FontOptions (14.0f));
+}
+
+enum FilterTypeMenuItemId
+{
+    peakFilterMenuItem = 100,
+    lowPassFilterMenuItem,
+    highPassFilterMenuItem
+};
+
+juce::String getFilterTypeLabel (int filterType)
+{
+    if (filterType == Plain_eqAudioProcessor::lowPassFilter)
+        return "LPF";
+
+    if (filterType == Plain_eqAudioProcessor::highPassFilter)
+        return "HPF";
+
+    return "Peaking";
+}
+
+void addFilterTypeMenuItems (juce::PopupMenu& menu, int currentFilterType)
+{
+    menu.addItem (peakFilterMenuItem, getFilterTypeLabel (Plain_eqAudioProcessor::peakFilter), true, currentFilterType == Plain_eqAudioProcessor::peakFilter);
+    menu.addItem (lowPassFilterMenuItem, getFilterTypeLabel (Plain_eqAudioProcessor::lowPassFilter), true, currentFilterType == Plain_eqAudioProcessor::lowPassFilter);
+    menu.addItem (highPassFilterMenuItem, getFilterTypeLabel (Plain_eqAudioProcessor::highPassFilter), true, currentFilterType == Plain_eqAudioProcessor::highPassFilter);
+}
+
+int getFilterTypeFromMenuResult (int result)
+{
+    if (result == lowPassFilterMenuItem)
+        return Plain_eqAudioProcessor::lowPassFilter;
+
+    if (result == highPassFilterMenuItem)
+        return Plain_eqAudioProcessor::highPassFilter;
+
+    if (result == peakFilterMenuItem)
+        return Plain_eqAudioProcessor::peakFilter;
+
+    return -1;
 }
 
 class AboutDialog final : public juce::Component
@@ -161,10 +201,20 @@ juce::Point<float> ResponseCurveComponent::getNodePosition (int bandIndex) const
     const auto frequency = juce::jlimit (20.0f, 20000.0f, audioProcessor.getBandFrequencyHz (bandIndex));
     auto displayGain = juce::jlimit (-20.0f, 20.0f, audioProcessor.getBandGainDb (bandIndex));
 
-    if (audioProcessor.getBandFilterType (bandIndex) == Plain_eqAudioProcessor::lowPassFilter)
+    const auto filterType = audioProcessor.getBandFilterType (bandIndex);
+
+    if (filterType == Plain_eqAudioProcessor::lowPassFilter)
     {
         const auto sampleRate = juce::jmax (audioProcessor.getCurrentSampleRateForDisplay(), 44100.0);
         displayGain = static_cast<float> (getLowPassFilterMagnitudeDb (sampleRate,
+                                                                        static_cast<double> (frequency),
+                                                                        static_cast<double> (audioProcessor.getBandQ (bandIndex)),
+                                                                        static_cast<double> (frequency)));
+    }
+    else if (filterType == Plain_eqAudioProcessor::highPassFilter)
+    {
+        const auto sampleRate = juce::jmax (audioProcessor.getCurrentSampleRateForDisplay(), 44100.0);
+        displayGain = static_cast<float> (getHighPassFilterMagnitudeDb (sampleRate,
                                                                         static_cast<double> (frequency),
                                                                         static_cast<double> (audioProcessor.getBandQ (bandIndex)),
                                                                         static_cast<double> (frequency)));
@@ -268,6 +318,10 @@ void ResponseCurveComponent::showNodeActionsMenu (int bandIndex, const juce::Mou
     };
 
     juce::PopupMenu menu;
+    juce::PopupMenu filterTypeMenu;
+    addFilterTypeMenuItems (filterTypeMenu, audioProcessor.getBandFilterType (bandIndex));
+    menu.addSubMenu ("Filter type", filterTypeMenu);
+    menu.addSeparator();
     menu.addItem (resetToDefaultItem, "Reset to default");
     menu.addSeparator();
     menu.addItem (deleteItem, "Delete", audioProcessor.getActiveBandCount() > 1);
@@ -285,7 +339,14 @@ void ResponseCurveComponent::showNodeActionsMenu (int bandIndex, const juce::Mou
                             if (safeThis == nullptr)
                                 return;
 
-                            if (result == resetToDefaultItem)
+                            const auto filterType = getFilterTypeFromMenuResult (result);
+                            if (filterType >= 0)
+                            {
+                                safeThis->setParameterFromValue (Plain_eqAudioProcessor::getFilterTypeParamId (bandIndex), static_cast<float> (filterType));
+                                safeThis->selectBand (bandIndex);
+                                safeThis->repaint();
+                            }
+                            else if (result == resetToDefaultItem)
                                 safeThis->resetBandToDefault (bandIndex);
                             else if (result == deleteItem)
                                 safeThis->deleteBand (bandIndex);
@@ -345,7 +406,7 @@ void ResponseCurveComponent::updateBandParametersFromPosition (int bandIndex, ju
 
     setParameterFromValue (Plain_eqAudioProcessor::getFrequencyParamId (bandIndex), frequency);
 
-    if (audioProcessor.getBandFilterType (bandIndex) != Plain_eqAudioProcessor::lowPassFilter)
+    if (audioProcessor.getBandFilterType (bandIndex) == Plain_eqAudioProcessor::peakFilter)
         setParameterFromValue (Plain_eqAudioProcessor::getGainParamId (bandIndex), gain);
 
     repaint();
@@ -452,6 +513,8 @@ void ResponseCurveComponent::paint (juce::Graphics& g)
 
             if (audioProcessor.getBandFilterType (band) == Plain_eqAudioProcessor::lowPassFilter)
                 decibels += getLowPassFilterMagnitudeDb (sampleRate, frequencyHz, q, analysisFrequency);
+            else if (audioProcessor.getBandFilterType (band) == Plain_eqAudioProcessor::highPassFilter)
+                decibels += getHighPassFilterMagnitudeDb (sampleRate, frequencyHz, q, analysisFrequency);
             else
                 decibels += getPeakFilterMagnitudeDb (sampleRate,
                                                       frequencyHz,
@@ -518,7 +581,7 @@ void ResponseCurveComponent::mouseDown (const juce::MouseEvent& event)
         if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getFrequencyParamId (selectedBandIndex)))
             frequencyParameter->beginChangeGesture();
 
-        if (audioProcessor.getBandFilterType (selectedBandIndex) != Plain_eqAudioProcessor::lowPassFilter)
+        if (audioProcessor.getBandFilterType (selectedBandIndex) == Plain_eqAudioProcessor::peakFilter)
             if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getGainParamId (selectedBandIndex)))
                 gainParameter->beginChangeGesture();
 
@@ -546,7 +609,7 @@ void ResponseCurveComponent::mouseUp (const juce::MouseEvent&)
     if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getFrequencyParamId (selectedBandIndex)))
         frequencyParameter->endChangeGesture();
 
-    if (audioProcessor.getBandFilterType (selectedBandIndex) != Plain_eqAudioProcessor::lowPassFilter)
+    if (audioProcessor.getBandFilterType (selectedBandIndex) == Plain_eqAudioProcessor::peakFilter)
         if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getGainParamId (selectedBandIndex)))
             gainParameter->endChangeGesture();
 }
@@ -640,7 +703,7 @@ Plain_eqAudioProcessorEditor::Plain_eqAudioProcessorEditor (Plain_eqAudioProcess
 
     filterTypeButton.onClick = [this]
     {
-        toggleSelectedFilterType();
+        showSelectedFilterTypeMenu();
     };
     filterTypeButton.setColour (juce::TextButton::buttonColourId, paperColour);
     filterTypeButton.setColour (juce::TextButton::textColourOnId, inkColour);
@@ -707,17 +770,33 @@ void Plain_eqAudioProcessorEditor::setSelectedBandIndex (int bandIndex)
     repaint();
 }
 
-void Plain_eqAudioProcessorEditor::toggleSelectedFilterType()
+void Plain_eqAudioProcessorEditor::showSelectedFilterTypeMenu()
+{
+    juce::PopupMenu menu;
+    addFilterTypeMenuItems (menu, audioProcessor.getBandFilterType (selectedBandIndex));
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&filterTypeButton),
+                         [safeThis = juce::Component::SafePointer<Plain_eqAudioProcessorEditor> (this)] (int result)
+                         {
+                             if (safeThis == nullptr)
+                                 return;
+
+                             const auto filterType = getFilterTypeFromMenuResult (result);
+                             if (filterType >= 0)
+                                 safeThis->setSelectedFilterType (filterType);
+                         });
+}
+
+void Plain_eqAudioProcessorEditor::setSelectedFilterType (int filterType)
 {
     if (auto* parameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getFilterTypeParamId (selectedBandIndex)))
     {
-        const auto currentType = audioProcessor.getBandFilterType (selectedBandIndex);
-        const auto nextType = currentType == Plain_eqAudioProcessor::lowPassFilter
-                            ? Plain_eqAudioProcessor::peakFilter
-                            : Plain_eqAudioProcessor::lowPassFilter;
+        const auto clampedFilterType = juce::jlimit (static_cast<int> (Plain_eqAudioProcessor::peakFilter),
+                                                    static_cast<int> (Plain_eqAudioProcessor::highPassFilter),
+                                                    filterType);
 
         parameter->beginChangeGesture();
-        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (nextType)));
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (static_cast<float> (clampedFilterType)));
         parameter->endChangeGesture();
     }
 
@@ -728,11 +807,12 @@ void Plain_eqAudioProcessorEditor::toggleSelectedFilterType()
 
 void Plain_eqAudioProcessorEditor::updateSelectedFilterControls()
 {
-    const auto isLowPass = audioProcessor.getBandFilterType (selectedBandIndex) == Plain_eqAudioProcessor::lowPassFilter;
+    const auto filterType = audioProcessor.getBandFilterType (selectedBandIndex);
+    const auto isPeak = filterType == Plain_eqAudioProcessor::peakFilter;
 
-    filterTypeButton.setButtonText (isLowPass ? "LPF" : "Peaking");
-    gainSlider.setEnabled (! isLowPass);
-    gainLabel.setEnabled (! isLowPass);
+    filterTypeButton.setButtonText (getFilterTypeLabel (filterType));
+    gainSlider.setEnabled (isPeak);
+    gainLabel.setEnabled (isPeak);
 }
 
 //==============================================================================

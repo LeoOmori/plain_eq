@@ -74,7 +74,8 @@ public:
     enum FilterType
     {
         peakFilter = 0,
-        lowPassFilter = 1
+        lowPassFilter = 1,
+        highPassFilter = 2
     };
 
     static juce::String getFrequencyParamId (int bandIndex);
