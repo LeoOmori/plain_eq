@@ -8,8 +8,6 @@
 
 namespace
 {
-constexpr double pi = 3.14159265358979323846;
-
 using PlainEq::DSP::getPeakFilterMagnitudeDb;
 using PlainEq::UiFormatters::formatDecibels;
 using PlainEq::UiFormatters::formatFrequency;
@@ -100,14 +98,14 @@ juce::Rectangle<float> ResponseCurveComponent::getGraphBounds() const
     return graphBounds;
 }
 
-juce::Point<float> ResponseCurveComponent::getNodePosition() const
+juce::Point<float> ResponseCurveComponent::getNodePosition (int bandIndex) const
 {
     auto graphBounds = getGraphBounds();
 
     const auto minFreq = std::log10 (20.0f);
     const auto maxFreq = std::log10 (20000.0f);
-    const auto frequency = juce::jlimit (20.0f, 20000.0f, audioProcessor.getFrequencyHz());
-    const auto gain = juce::jlimit (-20.0f, 20.0f, audioProcessor.getGainDb());
+    const auto frequency = juce::jlimit (20.0f, 20000.0f, audioProcessor.getBandFrequencyHz (bandIndex));
+    const auto gain = juce::jlimit (-20.0f, 20.0f, audioProcessor.getBandGainDb (bandIndex));
 
     const auto normalisedFrequency = (std::log10 (frequency) - minFreq) / (maxFreq - minFreq);
     const auto x = graphBounds.getX() + normalisedFrequency * graphBounds.getWidth();
@@ -122,9 +120,18 @@ void ResponseCurveComponent::setParameterFromValue (const juce::String& paramete
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
 }
 
-bool ResponseCurveComponent::isPositionOnNode (juce::Point<float> position) const
+int ResponseCurveComponent::getNodeAtPosition (juce::Point<float> position) const
 {
-    return position.getDistanceFrom (getNodePosition()) <= 18.0f;
+    for (int band = audioProcessor.getActiveBandCount() - 1; band >= 0; --band)
+        if (position.getDistanceFrom (getNodePosition (band)) <= 18.0f)
+            return band;
+
+    return -1;
+}
+
+bool ResponseCurveComponent::isPositionInGraph (juce::Point<float> position) const
+{
+    return getGraphBounds().contains (position);
 }
 
 void ResponseCurveComponent::processPendingAnalyzerSamples()
@@ -173,7 +180,23 @@ void ResponseCurveComponent::updateSpectrumFrame()
     repaint();
 }
 
-void ResponseCurveComponent::updateParametersFromPosition (juce::Point<float> position)
+void ResponseCurveComponent::selectBand (int bandIndex)
+{
+    selectedBandIndex = juce::jlimit (0, audioProcessor.getActiveBandCount() - 1, bandIndex);
+    isNodeSelected = true;
+
+    if (onSelectedBandChanged != nullptr)
+        onSelectedBandChanged (selectedBandIndex);
+}
+
+void ResponseCurveComponent::setSelectedBandIndex (int bandIndex)
+{
+    selectedBandIndex = juce::jlimit (0, audioProcessor.getActiveBandCount() - 1, bandIndex);
+    isNodeSelected = true;
+    repaint();
+}
+
+void ResponseCurveComponent::updateBandParametersFromPosition (int bandIndex, juce::Point<float> position)
 {
     auto graphBounds = getGraphBounds();
 
@@ -185,8 +208,8 @@ void ResponseCurveComponent::updateParametersFromPosition (juce::Point<float> po
     const auto frequency = std::pow (10.0f, minFreq + normalisedX * (maxFreq - minFreq));
     const auto gain = juce::jmap (normalisedY, 1.0f, 0.0f, -20.0f, 20.0f);
 
-    setParameterFromValue (Plain_eqAudioProcessor::frequencyParamId, frequency);
-    setParameterFromValue (Plain_eqAudioProcessor::gainParamId, gain);
+    setParameterFromValue (Plain_eqAudioProcessor::getFrequencyParamId (bandIndex), frequency);
+    setParameterFromValue (Plain_eqAudioProcessor::getGainParamId (bandIndex), gain);
     repaint();
 }
 
@@ -279,53 +302,68 @@ void ResponseCurveComponent::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x6688847c));
     g.strokePath (analyzerPath, juce::PathStrokeType (0.8f));
 
-    const auto frequency = static_cast<double> (audioProcessor.getFrequencyHz());
-    const auto gain = static_cast<double> (audioProcessor.getGainDb());
-    const auto q = static_cast<double> (audioProcessor.getQ());
-
     juce::Path responsePath;
-    responsePath.startNewSubPath (mapX (20.0), mapY (getPeakFilterMagnitudeDb (sampleRate, frequency, gain, q, 20.0)));
+    auto getResponseDb = [this, sampleRate] (double analysisFrequency)
+    {
+        auto decibels = 0.0;
+
+        for (int band = 0; band < audioProcessor.getActiveBandCount(); ++band)
+            decibels += getPeakFilterMagnitudeDb (sampleRate,
+                                                  static_cast<double> (audioProcessor.getBandFrequencyHz (band)),
+                                                  static_cast<double> (audioProcessor.getBandGainDb (band)),
+                                                  static_cast<double> (audioProcessor.getBandQ (band)),
+                                                  analysisFrequency);
+
+        return decibels;
+    };
+
+    responsePath.startNewSubPath (mapX (20.0), mapY (getResponseDb (20.0)));
 
     for (int x = 1; x <= analyzerPoints; ++x)
     {
         const auto proportion = static_cast<double> (x) / static_cast<double> (analyzerPoints);
         const auto analysisFrequency = std::pow (10.0, std::log10 (20.0) + proportion * (std::log10 (20000.0) - std::log10 (20.0)));
-        responsePath.lineTo (mapX (analysisFrequency), mapY (getPeakFilterMagnitudeDb (sampleRate, frequency, gain, q, analysisFrequency)));
+        responsePath.lineTo (mapX (analysisFrequency), mapY (getResponseDb (analysisFrequency)));
     }
 
     g.setColour (inkColour);
     g.strokePath (responsePath, juce::PathStrokeType (2.2f));
 
-    const auto nodePosition = getNodePosition();
-    const auto handleX = nodePosition.x;
-    const auto handleY = nodePosition.y;
-    g.setColour (paperColour);
-    g.fillEllipse (handleX - 13.0f, handleY - 13.0f, 26.0f, 26.0f);
-
-    if (isNodeSelected)
+    for (int band = 0; band < audioProcessor.getActiveBandCount(); ++band)
     {
-        g.setColour (lightInkColour);
-        g.drawEllipse (handleX - 18.0f, handleY - 18.0f, 36.0f, 36.0f, 2.0f);
-    }
+        const auto nodePosition = getNodePosition (band);
+        const auto handleX = nodePosition.x;
+        const auto handleY = nodePosition.y;
+        g.setColour (paperColour);
+        g.fillEllipse (handleX - 13.0f, handleY - 13.0f, 26.0f, 26.0f);
 
-    g.setColour (inkColour);
-    g.drawEllipse (handleX - 13.0f, handleY - 13.0f, 26.0f, 26.0f, 1.8f);
-    g.setFont (juce::FontOptions (13.0f));
-    g.drawText ("1", juce::roundToInt (handleX - 8.0f), juce::roundToInt (handleY - 8.0f), 16, 16, juce::Justification::centred);
+        if (isNodeSelected && band == selectedBandIndex)
+        {
+            g.setColour (lightInkColour);
+            g.drawEllipse (handleX - 18.0f, handleY - 18.0f, 36.0f, 36.0f, 2.0f);
+        }
+
+        g.setColour (inkColour);
+        g.drawEllipse (handleX - 13.0f, handleY - 13.0f, 26.0f, 26.0f, 1.8f);
+        g.setFont (juce::FontOptions (13.0f));
+        g.drawText (juce::String (band + 1), juce::roundToInt (handleX - 8.0f), juce::roundToInt (handleY - 8.0f), 16, 16, juce::Justification::centred);
+    }
 }
 
 void ResponseCurveComponent::mouseDown (const juce::MouseEvent& event)
 {
-    if (isPositionOnNode (event.position))
-    {
-        isNodeSelected = true;
-        isDraggingNode = true;
-        nodeDragOffset = getNodePosition() - event.position;
+    const auto nodeIndex = getNodeAtPosition (event.position);
 
-        if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::frequencyParamId))
+    if (nodeIndex >= 0)
+    {
+        selectBand (nodeIndex);
+        isDraggingNode = true;
+        nodeDragOffset = getNodePosition (selectedBandIndex) - event.position;
+
+        if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getFrequencyParamId (selectedBandIndex)))
             frequencyParameter->beginChangeGesture();
 
-        if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::gainParamId))
+        if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getGainParamId (selectedBandIndex)))
             gainParameter->beginChangeGesture();
 
         repaint();
@@ -339,7 +377,7 @@ void ResponseCurveComponent::mouseDown (const juce::MouseEvent& event)
 void ResponseCurveComponent::mouseDrag (const juce::MouseEvent& event)
 {
     if (isDraggingNode)
-        updateParametersFromPosition (event.position + nodeDragOffset);
+        updateBandParametersFromPosition (selectedBandIndex, event.position + nodeDragOffset);
 }
 
 void ResponseCurveComponent::mouseUp (const juce::MouseEvent&)
@@ -349,18 +387,43 @@ void ResponseCurveComponent::mouseUp (const juce::MouseEvent&)
 
     isDraggingNode = false;
 
-    if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::frequencyParamId))
+    if (auto* frequencyParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getFrequencyParamId (selectedBandIndex)))
         frequencyParameter->endChangeGesture();
 
-    if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::gainParamId))
+    if (auto* gainParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getGainParamId (selectedBandIndex)))
         gainParameter->endChangeGesture();
 }
 
 void ResponseCurveComponent::mouseMove (const juce::MouseEvent& event)
 {
-    setMouseCursor (isPositionOnNode (event.position)
+    setMouseCursor (getNodeAtPosition (event.position) >= 0
                         ? juce::MouseCursor::DraggingHandCursor
                         : juce::MouseCursor::NormalCursor);
+}
+
+void ResponseCurveComponent::mouseDoubleClick (const juce::MouseEvent& event)
+{
+    if (! isPositionInGraph (event.position))
+        return;
+
+    const auto existingNodeIndex = getNodeAtPosition (event.position);
+    if (existingNodeIndex >= 0)
+    {
+        selectBand (existingNodeIndex);
+        repaint();
+        return;
+    }
+
+    const auto bandCount = audioProcessor.getActiveBandCount();
+    if (bandCount >= Plain_eqAudioProcessor::maxBands)
+        return;
+
+    const auto newBandIndex = bandCount;
+    audioProcessor.setActiveBandCount (bandCount + 1);
+    selectBand (newBandIndex);
+
+    setParameterFromValue (Plain_eqAudioProcessor::getQParamId (newBandIndex), 1.0f);
+    updateBandParametersFromPosition (newBandIndex, event.position);
 }
 
 void ResponseCurveComponent::mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
@@ -368,7 +431,7 @@ void ResponseCurveComponent::mouseWheelMove (const juce::MouseEvent&, const juce
     if (! isNodeSelected)
         return;
 
-    if (auto* qParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::qParamId))
+    if (auto* qParameter = audioProcessor.parameters.getParameter (Plain_eqAudioProcessor::getQParamId (selectedBandIndex)))
     {
         const auto direction = wheel.isReversed ? -1.0f : 1.0f;
         const auto step = wheel.deltaY * direction * 0.08f;
@@ -394,6 +457,7 @@ Plain_eqAudioProcessorEditor::Plain_eqAudioProcessorEditor (Plain_eqAudioProcess
 {
     setLookAndFeel (&sketchLookAndFeel);
     addAndMakeVisible (responseCurve);
+    responseCurve.onSelectedBandChanged = [this] (int bandIndex) { setSelectedBandIndex (bandIndex); };
 
     configureSlider (frequencySlider, frequencyLabel, "Freq", sketchLookAndFeel);
     configureSlider (gainSlider, gainLabel, "Gain", sketchLookAndFeel);
@@ -425,9 +489,7 @@ Plain_eqAudioProcessorEditor::Plain_eqAudioProcessorEditor (Plain_eqAudioProcess
 
     addAndMakeVisible (bypassButton);
 
-    frequencyAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::frequencyParamId, frequencySlider);
-    gainAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::gainParamId, gainSlider);
-    qAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::qParamId, qSlider);
+    setSelectedBandIndex (0);
     outputAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::outputGainParamId, outputSlider);
     bypassAttachment = std::make_unique<ButtonAttachment> (audioProcessor.parameters, Plain_eqAudioProcessor::bypassParamId, bypassButton);
 
@@ -443,6 +505,29 @@ Plain_eqAudioProcessorEditor::~Plain_eqAudioProcessorEditor()
     qSlider.setLookAndFeel (nullptr);
     outputSlider.setLookAndFeel (nullptr);
     setLookAndFeel (nullptr);
+}
+
+//==============================================================================
+void Plain_eqAudioProcessorEditor::setSelectedBandIndex (int bandIndex)
+{
+    frequencyAttachment.reset();
+    gainAttachment.reset();
+    qAttachment.reset();
+
+    selectedBandIndex = juce::jlimit (0, audioProcessor.getActiveBandCount() - 1, bandIndex);
+    responseCurve.setSelectedBandIndex (selectedBandIndex);
+
+    frequencyAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters,
+                                                              Plain_eqAudioProcessor::getFrequencyParamId (selectedBandIndex),
+                                                              frequencySlider);
+    gainAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters,
+                                                         Plain_eqAudioProcessor::getGainParamId (selectedBandIndex),
+                                                         gainSlider);
+    qAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters,
+                                                      Plain_eqAudioProcessor::getQParamId (selectedBandIndex),
+                                                      qSlider);
+
+    repaint();
 }
 
 //==============================================================================
@@ -465,13 +550,12 @@ void Plain_eqAudioProcessorEditor::paint (juce::Graphics& g)
     auto module = controlsCardBounds.toFloat();
     drawSketchRect (g, module, 8.0f, 1.4f);
 
-    auto moduleHeader = module.reduced (22.0f, 16.0f).removeFromTop (42.0f);
     g.setColour (paperColour);
     g.fillEllipse (bandBadgeBounds.toFloat());
     g.setColour (inkColour);
     g.drawEllipse (bandBadgeBounds.toFloat(), 1.5f);
     g.setFont (juce::FontOptions (18.0f));
-    g.drawText ("1", bandBadgeBounds, juce::Justification::centred);
+    g.drawText (juce::String (selectedBandIndex + 1), bandBadgeBounds, juce::Justification::centred);
 
     auto filterType = filterTypeBounds.toFloat();
     drawSketchRect (g, filterType, 3.0f, 1.2f);
@@ -480,7 +564,6 @@ void Plain_eqAudioProcessorEditor::paint (juce::Graphics& g)
 
     g.setFont (juce::FontOptions (12.5f));
     g.setColour (lightInkColour);
-    auto valueRow = controlsCardBounds.reduced (22, 14).removeFromBottom (24);
 
     drawSketchRect (g, bypassButton.getBounds().toFloat(), 5.0f, 1.4f);
 

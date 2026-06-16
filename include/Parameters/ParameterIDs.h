@@ -7,4 +7,5 @@ inline constexpr const char* gainParamId = "gain";
 inline constexpr const char* qParamId = "q";
 inline constexpr const char* outputGainParamId = "outputGain";
 inline constexpr const char* bypassParamId = "bypass";
+inline constexpr const char* activeBandCountProperty = "activeBandCount";
 } // namespace PlainEq::Parameters

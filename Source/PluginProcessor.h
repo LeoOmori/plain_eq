@@ -68,12 +68,22 @@ public:
     static constexpr const char* qParamId = PlainEq::Parameters::qParamId;
     static constexpr const char* outputGainParamId = PlainEq::Parameters::outputGainParamId;
     static constexpr const char* bypassParamId = PlainEq::Parameters::bypassParamId;
+    static constexpr int maxBands = 10;
+
+    static juce::String getFrequencyParamId (int bandIndex);
+    static juce::String getGainParamId (int bandIndex);
+    static juce::String getQParamId (int bandIndex);
 
     juce::AudioProcessorValueTreeState parameters;
 
     float getFrequencyHz() const noexcept;
     float getGainDb() const noexcept;
     float getQ() const noexcept;
+    float getBandFrequencyHz (int bandIndex) const noexcept;
+    float getBandGainDb (int bandIndex) const noexcept;
+    float getBandQ (int bandIndex) const noexcept;
+    int getActiveBandCount() const noexcept;
+    void setActiveBandCount (int count);
     float getOutputGainDb() const noexcept;
     bool isBypassed() const noexcept;
     double getCurrentSampleRateForDisplay() const noexcept;
@@ -89,16 +99,18 @@ private:
 
     static constexpr size_t analyzerFifoSize = 32768;
 
-    std::vector<PlainEq::DSP::Biquad> filters;
+    std::vector<std::array<PlainEq::DSP::Biquad, maxBands>> filters;
     std::atomic<double> currentSampleRate { 44100.0 };
+    std::atomic<int> activeBandCount { 1 };
 
     std::array<float, analyzerFifoSize> analyzerFifo {};
     std::atomic<size_t> analyzerWriteIndex { 0 };
     std::atomic<size_t> analyzerReadIndex { 0 };
 
-    float lastFrequencyHz = -1.0f;
-    float lastGainDb = 0.0f;
-    float lastQ = 0.0f;
+    std::array<float, maxBands> lastFrequencyHz {};
+    std::array<float, maxBands> lastGainDb {};
+    std::array<float, maxBands> lastQ {};
+    int lastActiveBandCount = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Plain_eqAudioProcessor)
 };

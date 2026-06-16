@@ -25,6 +25,7 @@ Plain_eqAudioProcessor::Plain_eqAudioProcessor()
      : parameters (*this, nullptr, juce::Identifier ("PlainEqParameters"), createParameterLayout())
 #endif
 {
+    parameters.state.setProperty (PlainEq::Parameters::activeBandCountProperty, 1, nullptr);
 }
 
 Plain_eqAudioProcessor::~Plain_eqAudioProcessor()
@@ -103,10 +104,14 @@ void Plain_eqAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlo
     analyzerWriteIndex.store (0, std::memory_order_release);
     analyzerReadIndex.store (0, std::memory_order_release);
 
-    for (auto& filter : filters)
-        filter.reset();
+    for (auto& channelFilters : filters)
+        for (auto& filter : channelFilters)
+            filter.reset();
 
-    lastFrequencyHz = -1.0f;
+    lastFrequencyHz.fill (-1.0f);
+    lastGainDb.fill (1000.0f);
+    lastQ.fill (-1.0f);
+    lastActiveBandCount = -1;
     updateFiltersIfNeeded();
 }
 
@@ -168,15 +173,21 @@ void Plain_eqAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juc
         updateFiltersIfNeeded();
 
     const auto numChannelsToProcess = juce::jmin (totalNumInputChannels, static_cast<int> (filters.size()));
+    const auto bandCount = getActiveBandCount();
 
     for (int channel = 0; channel < numChannelsToProcess; ++channel)
     {
         auto* channelData = buffer.getWritePointer (channel);
-        auto& filter = filters[static_cast<size_t> (channel)];
+        auto& channelFilters = filters[static_cast<size_t> (channel)];
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
         {
-            auto processedSample = bypassed ? channelData[sample] : filter.process (channelData[sample]);
+            auto processedSample = channelData[sample];
+
+            if (! bypassed)
+                for (int band = 0; band < bandCount; ++band)
+                    processedSample = channelFilters[static_cast<size_t> (band)].process (processedSample);
+
             channelData[sample] = processedSample * outputGain;
         }
     }
@@ -250,6 +261,8 @@ juce::AudioProcessorEditor* Plain_eqAudioProcessor::createEditor()
 //==============================================================================
 void Plain_eqAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    parameters.state.setProperty (PlainEq::Parameters::activeBandCountProperty, getActiveBandCount(), nullptr);
+
     if (auto state = parameters.copyState().createXml())
         copyXmlToBinary (*state, destData);
 }
@@ -262,31 +275,58 @@ void Plain_eqAudioProcessor::setStateInformation (const void* data, int sizeInBy
             parameters.replaceState (juce::ValueTree::fromXml (*state));
     }
 
-    lastFrequencyHz = -1.0f;
+    setActiveBandCount (static_cast<int> (parameters.state.getProperty (PlainEq::Parameters::activeBandCountProperty, 1)));
+    lastFrequencyHz.fill (-1.0f);
+    lastGainDb.fill (1000.0f);
+    lastQ.fill (-1.0f);
+    lastActiveBandCount = -1;
 }
 
 //==============================================================================
+juce::String Plain_eqAudioProcessor::getFrequencyParamId (int bandIndex)
+{
+    return bandIndex == 0 ? juce::String (frequencyParamId)
+                          : juce::String (frequencyParamId) + juce::String (bandIndex + 1);
+}
+
+juce::String Plain_eqAudioProcessor::getGainParamId (int bandIndex)
+{
+    return bandIndex == 0 ? juce::String (gainParamId)
+                          : juce::String (gainParamId) + juce::String (bandIndex + 1);
+}
+
+juce::String Plain_eqAudioProcessor::getQParamId (int bandIndex)
+{
+    return bandIndex == 0 ? juce::String (qParamId)
+                          : juce::String (qParamId) + juce::String (bandIndex + 1);
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout Plain_eqAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> layout;
 
-    layout.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { frequencyParamId, 1 },
-        "Frequency",
-        juce::NormalisableRange<float> { 20.0f, 20000.0f, 1.0f, 0.35f },
-        1000.0f));
+    for (int band = 0; band < maxBands; ++band)
+    {
+        const auto bandNumber = juce::String (band + 1);
 
-    layout.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { gainParamId, 1 },
-        "Gain",
-        juce::NormalisableRange<float> { -20.0f, 20.0f, 0.1f },
-        0.0f));
+        layout.push_back (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { getFrequencyParamId (band), 1 },
+            "Band " + bandNumber + " Frequency",
+            juce::NormalisableRange<float> { 20.0f, 20000.0f, 1.0f, 0.35f },
+            1000.0f));
 
-    layout.push_back (std::make_unique<juce::AudioParameterFloat> (
-        juce::ParameterID { qParamId, 1 },
-        "Q",
-        juce::NormalisableRange<float> { 0.1f, 20.0f, 0.01f, 0.35f },
-        1.0f));
+        layout.push_back (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { getGainParamId (band), 1 },
+            "Band " + bandNumber + " Gain",
+            juce::NormalisableRange<float> { -20.0f, 20.0f, 0.1f },
+            0.0f));
+
+        layout.push_back (std::make_unique<juce::AudioParameterFloat> (
+            juce::ParameterID { getQParamId (band), 1 },
+            "Band " + bandNumber + " Q",
+            juce::NormalisableRange<float> { 0.1f, 20.0f, 0.01f, 0.35f },
+            1.0f));
+    }
 
     layout.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { outputGainParamId, 1 },
@@ -313,17 +353,44 @@ float Plain_eqAudioProcessor::getParameterValue (const juce::String& parameterId
 
 float Plain_eqAudioProcessor::getFrequencyHz() const noexcept
 {
-    return getParameterValue (frequencyParamId, 1000.0f);
+    return getBandFrequencyHz (0);
 }
 
 float Plain_eqAudioProcessor::getGainDb() const noexcept
 {
-    return getParameterValue (gainParamId, 0.0f);
+    return getBandGainDb (0);
 }
 
 float Plain_eqAudioProcessor::getQ() const noexcept
 {
-    return getParameterValue (qParamId, 1.0f);
+    return getBandQ (0);
+}
+
+float Plain_eqAudioProcessor::getBandFrequencyHz (int bandIndex) const noexcept
+{
+    return getParameterValue (getFrequencyParamId (juce::jlimit (0, maxBands - 1, bandIndex)), 1000.0f);
+}
+
+float Plain_eqAudioProcessor::getBandGainDb (int bandIndex) const noexcept
+{
+    return getParameterValue (getGainParamId (juce::jlimit (0, maxBands - 1, bandIndex)), 0.0f);
+}
+
+float Plain_eqAudioProcessor::getBandQ (int bandIndex) const noexcept
+{
+    return getParameterValue (getQParamId (juce::jlimit (0, maxBands - 1, bandIndex)), 1.0f);
+}
+
+int Plain_eqAudioProcessor::getActiveBandCount() const noexcept
+{
+    return juce::jlimit (1, maxBands, activeBandCount.load (std::memory_order_acquire));
+}
+
+void Plain_eqAudioProcessor::setActiveBandCount (int count)
+{
+    const auto clampedCount = juce::jlimit (1, maxBands, count);
+    activeBandCount.store (clampedCount, std::memory_order_release);
+    parameters.state.setProperty (PlainEq::Parameters::activeBandCountProperty, clampedCount, nullptr);
 }
 
 float Plain_eqAudioProcessor::getOutputGainDb() const noexcept
@@ -343,21 +410,39 @@ double Plain_eqAudioProcessor::getCurrentSampleRateForDisplay() const noexcept
 
 void Plain_eqAudioProcessor::updateFiltersIfNeeded()
 {
-    const auto frequencyHz = getFrequencyHz();
-    const auto gainDb = getGainDb();
-    const auto q = getQ();
+    const auto bandCount = getActiveBandCount();
 
-    if (frequencyHz == lastFrequencyHz && gainDb == lastGainDb && q == lastQ)
-        return;
+    if (bandCount == lastActiveBandCount)
+    {
+        auto parametersAreUnchanged = true;
+
+        for (int band = 0; band < bandCount; ++band)
+            parametersAreUnchanged = parametersAreUnchanged
+                && getBandFrequencyHz (band) == lastFrequencyHz[static_cast<size_t> (band)]
+                && getBandGainDb (band) == lastGainDb[static_cast<size_t> (band)]
+                && getBandQ (band) == lastQ[static_cast<size_t> (band)];
+
+        if (parametersAreUnchanged)
+            return;
+    }
 
     const auto sampleRate = currentSampleRate.load();
 
-    for (auto& filter : filters)
-        filter.setPeakFilter (sampleRate, frequencyHz, gainDb, q);
+    for (int band = 0; band < bandCount; ++band)
+    {
+        const auto frequencyHz = getBandFrequencyHz (band);
+        const auto gainDb = getBandGainDb (band);
+        const auto q = getBandQ (band);
 
-    lastFrequencyHz = frequencyHz;
-    lastGainDb = gainDb;
-    lastQ = q;
+        for (auto& channelFilters : filters)
+            channelFilters[static_cast<size_t> (band)].setPeakFilter (sampleRate, frequencyHz, gainDb, q);
+
+        lastFrequencyHz[static_cast<size_t> (band)] = frequencyHz;
+        lastGainDb[static_cast<size_t> (band)] = gainDb;
+        lastQ[static_cast<size_t> (band)] = q;
+    }
+
+    lastActiveBandCount = bandCount;
 }
 
 //==============================================================================

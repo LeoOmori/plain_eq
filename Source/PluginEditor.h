@@ -12,6 +12,7 @@
 #include "PluginProcessor.h"
 
 #include <array>
+#include <functional>
 
 //==============================================================================
 class SketchLookAndFeel final : public juce::LookAndFeel_V4
@@ -34,14 +35,21 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    void setSelectedBandIndex (int bandIndex);
+
+    std::function<void (int)> onSelectedBandChanged;
 
 private:
     void timerCallback() override;
     juce::Rectangle<float> getGraphBounds() const;
-    juce::Point<float> getNodePosition() const;
-    bool isPositionOnNode (juce::Point<float>) const;
-    void updateParametersFromPosition (juce::Point<float>);
+    juce::Point<float> getNodePosition (int bandIndex) const;
+    int getNodeAtPosition (juce::Point<float>) const;
+    bool isPositionInGraph (juce::Point<float>) const;
+    void selectBand (int bandIndex);
+    void updateBandParametersFromPosition (int bandIndex, juce::Point<float>);
     void setParameterFromValue (const juce::String& parameterId, float value);
     void processPendingAnalyzerSamples();
     void updateSpectrumFrame();
@@ -61,6 +69,7 @@ private:
     int fftInputIndex = 0;
     bool nextFFTBlockReady = false;
     juce::Point<float> nodeDragOffset;
+    int selectedBandIndex = 0;
     bool isDraggingNode = false;
     bool isNodeSelected = false;
 };
@@ -102,6 +111,9 @@ private:
     juce::Rectangle<int> bandBadgeBounds;
     juce::Rectangle<int> filterTypeBounds;
     juce::Rectangle<int> footerBounds;
+    int selectedBandIndex = 0;
+
+    void setSelectedBandIndex (int bandIndex);
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
