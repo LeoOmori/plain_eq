@@ -10,6 +10,8 @@ public:
     void setPeakFilter (double sampleRate, double frequencyHz, double gainDb, double q);
     void setLowPassFilter (double sampleRate, double frequencyHz, double q);
     void setHighPassFilter (double sampleRate, double frequencyHz, double q);
+    void setLowShelfFilter (double sampleRate, double frequencyHz, double gainDb, double q);
+    void setHighShelfFilter (double sampleRate, double frequencyHz, double gainDb, double q);
     float process (float input);
     void reset();
 

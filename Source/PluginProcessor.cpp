@@ -25,7 +25,7 @@ Plain_eqAudioProcessor::Plain_eqAudioProcessor()
      : parameters (*this, nullptr, juce::Identifier ("PlainEqParameters"), createParameterLayout())
 #endif
 {
-    parameters.state.setProperty (PlainEq::Parameters::activeBandCountProperty, 1, nullptr);
+    parameters.state.setProperty (PlainEq::Parameters::activeBandCountProperty, defaultActiveBandCount, nullptr);
 }
 
 Plain_eqAudioProcessor::~Plain_eqAudioProcessor()
@@ -276,7 +276,7 @@ void Plain_eqAudioProcessor::setStateInformation (const void* data, int sizeInBy
             parameters.replaceState (juce::ValueTree::fromXml (*state));
     }
 
-    setActiveBandCount (static_cast<int> (parameters.state.getProperty (PlainEq::Parameters::activeBandCountProperty, 1)));
+    setActiveBandCount (static_cast<int> (parameters.state.getProperty (PlainEq::Parameters::activeBandCountProperty, defaultActiveBandCount)));
     lastFrequencyHz.fill (-1.0f);
     lastGainDb.fill (1000.0f);
     lastQ.fill (-1.0f);
@@ -309,6 +309,43 @@ juce::String Plain_eqAudioProcessor::getFilterTypeParamId (int bandIndex)
                           : juce::String (filterTypeParamId) + juce::String (bandIndex + 1);
 }
 
+float Plain_eqAudioProcessor::getDefaultBandFrequencyHz (int bandIndex) noexcept
+{
+    if (bandIndex == 0)
+        return 50.0f;
+
+    if (bandIndex == 1)
+        return 550.0f;
+
+    if (bandIndex == 2)
+        return 10000.0f;
+
+    return 1000.0f;
+}
+
+float Plain_eqAudioProcessor::getDefaultBandGainDb (int bandIndex) noexcept
+{
+    juce::ignoreUnused (bandIndex);
+    return 0.0f;
+}
+
+float Plain_eqAudioProcessor::getDefaultBandQ (int bandIndex) noexcept
+{
+    juce::ignoreUnused (bandIndex);
+    return 1.0f;
+}
+
+int Plain_eqAudioProcessor::getDefaultBandFilterType (int bandIndex) noexcept
+{
+    if (bandIndex == 0)
+        return lowShelfFilter;
+
+    if (bandIndex == 2)
+        return highShelfFilter;
+
+    return peakFilter;
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout Plain_eqAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> layout;
@@ -321,25 +358,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout Plain_eqAudioProcessor::crea
             juce::ParameterID { getFrequencyParamId (band), 1 },
             "Band " + bandNumber + " Frequency",
             juce::NormalisableRange<float> { 20.0f, 20000.0f, 1.0f, 0.35f },
-            1000.0f));
+            getDefaultBandFrequencyHz (band)));
 
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { getGainParamId (band), 1 },
             "Band " + bandNumber + " Gain",
             juce::NormalisableRange<float> { -20.0f, 20.0f, 0.1f },
-            0.0f));
+            getDefaultBandGainDb (band)));
 
         layout.push_back (std::make_unique<juce::AudioParameterFloat> (
             juce::ParameterID { getQParamId (band), 1 },
             "Band " + bandNumber + " Q",
             juce::NormalisableRange<float> { 0.1f, 20.0f, 0.01f, 0.35f },
-            1.0f));
+            getDefaultBandQ (band)));
 
         layout.push_back (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { getFilterTypeParamId (band), 1 },
             "Band " + bandNumber + " Filter Type",
-            juce::StringArray { "Peak", "LPF", "HPF" },
-            peakFilter));
+            juce::StringArray { "Peak", "LPF", "HPF", "Low Shelf", "High Shelf" },
+            getDefaultBandFilterType (band)));
     }
 
     layout.push_back (std::make_unique<juce::AudioParameterFloat> (
@@ -463,6 +500,10 @@ void Plain_eqAudioProcessor::updateFiltersIfNeeded()
                 filter.setLowPassFilter (sampleRate, frequencyHz, q);
             else if (filterType == highPassFilter)
                 filter.setHighPassFilter (sampleRate, frequencyHz, q);
+            else if (filterType == lowShelfFilter)
+                filter.setLowShelfFilter (sampleRate, frequencyHz, gainDb, q);
+            else if (filterType == highShelfFilter)
+                filter.setHighShelfFilter (sampleRate, frequencyHz, gainDb, q);
             else
                 filter.setPeakFilter (sampleRate, frequencyHz, gainDb, q);
         }

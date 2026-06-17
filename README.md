@@ -10,7 +10,7 @@ This project intentionally keeps the feature set small: one EQ band, direct cont
 
 ## Features
 
-- Multi-band EQ with peaking, low-pass, and high-pass filter types
+- Multi-band EQ with peaking, low-shelf, high-shelf, low-pass, and high-pass filter types
 - Frequency, gain, Q, output gain, and bypass controls
 - Drag-and-edit EQ node on the graph
 - Per-node filter type selection from the UI
@@ -20,25 +20,27 @@ This project intentionally keeps the feature set small: one EQ band, direct cont
 
 ## How the EQ works
 
-Plain EQ supports multiple EQ nodes. Each node can be set to one of three filter types:
+Plain EQ supports multiple EQ nodes. Each node can be set to one of five filter types:
 
 - **Peaking**: boosts or cuts around the selected frequency.
+- **Low Shelf**: boosts or cuts frequencies below the selected frequency.
+- **High Shelf**: boosts or cuts frequencies above the selected frequency.
 - **LPF**: low-pass filter that rolls off frequencies above the cutoff.
 - **HPF**: high-pass filter that rolls off frequencies below the cutoff.
 
 Each node has three main parameters:
 
 - **Frequency**: chooses the center frequency of the EQ band.
-- **Gain**: boosts or cuts that frequency area when using the peaking filter.
+- **Gain**: boosts or cuts that frequency area when using peaking or shelf filters.
 - **Q**: controls how narrow or wide the affected area is.
 
-When the selected node is a peaking filter, gain above `0 dB` boosts around the selected frequency and gain below `0 dB` cuts around it. For LPF and HPF nodes, the gain control is disabled and frequency acts as the cutoff. Higher Q values make the filter more resonant/narrow around the cutoff. Lower Q values make it smoother.
+When the selected node is a peaking or shelf filter, gain above `0 dB` boosts and gain below `0 dB` cuts the affected frequency area. For LPF and HPF nodes, the gain control is disabled and frequency acts as the cutoff. Higher Q values make the filter more resonant/narrow around the cutoff. Lower Q values make it smoother.
 
 The graph shows:
 
 - the EQ response curve
 - the selected EQ node
-- the combined response of peaking, LPF, and HPF nodes
+- the combined response of peaking, shelf, LPF, and HPF nodes
 - a filled live spectrum analyzer showing the incoming audio signal
 
 The analyzer is intentionally simple for v1: input samples are copied into a FIFO during audio processing, then the UI timer pulls those samples, runs an FFT, and draws the spectrum. Heavy drawing and allocations are avoided inside `processBlock()`.

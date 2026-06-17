@@ -70,18 +70,25 @@ public:
     static constexpr const char* outputGainParamId = PlainEq::Parameters::outputGainParamId;
     static constexpr const char* bypassParamId = PlainEq::Parameters::bypassParamId;
     static constexpr int maxBands = 10;
+    static constexpr int defaultActiveBandCount = 3;
 
     enum FilterType
     {
         peakFilter = 0,
         lowPassFilter = 1,
-        highPassFilter = 2
+        highPassFilter = 2,
+        lowShelfFilter = 3,
+        highShelfFilter = 4
     };
 
     static juce::String getFrequencyParamId (int bandIndex);
     static juce::String getGainParamId (int bandIndex);
     static juce::String getQParamId (int bandIndex);
     static juce::String getFilterTypeParamId (int bandIndex);
+    static float getDefaultBandFrequencyHz (int bandIndex) noexcept;
+    static float getDefaultBandGainDb (int bandIndex) noexcept;
+    static float getDefaultBandQ (int bandIndex) noexcept;
+    static int getDefaultBandFilterType (int bandIndex) noexcept;
 
     juce::AudioProcessorValueTreeState parameters;
 
@@ -111,7 +118,7 @@ private:
 
     std::vector<std::array<PlainEq::DSP::Biquad, maxBands>> filters;
     std::atomic<double> currentSampleRate { 44100.0 };
-    std::atomic<int> activeBandCount { 1 };
+    std::atomic<int> activeBandCount { defaultActiveBandCount };
 
     std::array<float, analyzerFifoSize> analyzerFifo {};
     std::atomic<size_t> analyzerWriteIndex { 0 };
